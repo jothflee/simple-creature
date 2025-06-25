@@ -65,7 +65,7 @@ const App: React.FC = () => {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', padding: '2%' }}>
       <div style={{ marginBottom: '2%', color: '#f5f5f5', textAlign: 'center' }}>
         <h1>Simple Creature</h1>
-        <p>Generation: {stats.evolutionCount} | Current Creatures: {stats.evolutionCount * 50 + stats.totalCreatures} | Best Distance: {stats.bestDistance.toFixed(2)}</p>
+        <p>Generation: {stats.evolutionCount} | Creatures: {stats.evolutionCount * 50 + stats.totalCreatures} | Best Distance: {stats.bestDistance.toFixed(2)}</p>
       </div>
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'start', width: '100%' }}>
         <canvas

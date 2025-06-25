@@ -12,6 +12,7 @@ export abstract class BasePhysicsWorld implements IPhysicsWorld {
   protected cfg: VisualConfig;
   protected lastUpdate = Date.now();
   private distanceBins: number[] = [];
+  protected creatureMaxDistances: Map<number, number> = new Map();
 
   constructor(cfg: VisualConfig, canvas: HTMLCanvasElement, gravity: number = 1) {
     this.cfg = cfg;
@@ -65,31 +66,23 @@ export abstract class BasePhysicsWorld implements IPhysicsWorld {
   removeCreature(creatureId: number): void {
     const creatureData = this.creatures.get(creatureId);
     if (creatureData) {
-      // Calculate the furthest distance reached by the creature
-      const furthestDistance = Math.max(
-        ...creatureData.bodies.map(body => body.body.position.x)
-      );
-
-      // Determine the bin index for the furthest distance
-      const binIndex = Math.floor(furthestDistance / 100);
-
-      // Ensure the distanceBins array is large enough
-      while (this.distanceBins.length <= binIndex) {
-        this.distanceBins.push(0);
-      }
-
-      // Increment the bin count
-      this.distanceBins[binIndex] += 1;
-
-      // Remove bodies and muscles from the physics world
-      creatureData.bodies.forEach(body => {
-        World.remove(this.engine.world, body.body);
-      });
-      creatureData.muscles.forEach(muscle => {
-        World.remove(this.engine.world, muscle.constraint);
-      });
-      
-      this.creatures.delete(creatureId);
+        // Calculate the furthest distance reached by the creature
+        const furthestDistance = Math.max(
+            ...creatureData.bodies.map(body => body.body.position.x)
+        );
+        // Update the all-time max distance for this creature
+        const prev = this.creatureMaxDistances.get(creatureId) || 0;
+        if (furthestDistance > prev) {
+            this.creatureMaxDistances.set(creatureId, furthestDistance);
+        }
+        // Remove bodies and muscles from the physics world
+        creatureData.bodies.forEach(body => {
+            World.remove(this.engine.world, body.body);
+        });
+        creatureData.muscles.forEach(muscle => {
+            World.remove(this.engine.world, muscle.constraint);
+        });
+        this.creatures.delete(creatureId);
     }
   }
 
@@ -107,73 +100,45 @@ export abstract class BasePhysicsWorld implements IPhysicsWorld {
     const scaleX = canvas.width / (bounds.max.x - bounds.min.x);
     const scaleY = canvas.height / (bounds.max.y - bounds.min.y);
 
-    // Save the current canvas state and clear the background
     ctx.save();
-    ctx.globalCompositeOperation = 'destination-over'; // Ensure bars are drawn behind everything else
+    ctx.globalCompositeOperation = 'destination-over';
 
     // Render each bin as a bar
     this.distanceBins.forEach((count, index) => {
       const binX = index * 100;
       const barWidth = 100 * scaleX;
-      const barHeight = count * 10; // Scale bar height by count
+      const barHeight = count * 10;
 
-      // Convert world coordinates to screen coordinates
       const screenX = (binX - bounds.min.x) * scaleX;
       const screenY = (this.cfg.groundY - bounds.min.y) * scaleY;
 
-      // Draw the bar
-      ctx.fillStyle = '#222'; // Dark-dark color for the bars
+      ctx.fillStyle = '#222';
       ctx.fillRect(screenX, screenY - barHeight, barWidth, barHeight);
     });
 
-    // Restore the canvas state
     ctx.restore();
   }
 
   update(delta: number): void {
     Engine.update(this.engine, delta);
-    
-    // Update each creature's muscles
-    this.creatures.forEach(({ bodies, muscles }) => {
-      muscles.forEach(muscle => {
-        muscle.update(delta, this.cfg.groundY);
-      });
-      
-      // Apply damping for null-gravity worlds
-      if (this.engine.gravity.y === 0) {
-        this.applyDamping(bodies);
-      }
+    // Update all-time max distances for living creatures
+    this.creatures.forEach(({ bodies }, id) => {
+        const furthest = Math.max(...bodies.map(body => body.body.position.x));
+        const prev = this.creatureMaxDistances.get(id) || 0;
+        if (furthest > prev) {
+            this.creatureMaxDistances.set(id, furthest);
+        }
     });
-
-    // Render the distance bins in the background
+    // Rebuild histogram bins from all max distances
+    this.distanceBins = [];
+    this.creatureMaxDistances.forEach((dist) => {
+        const binIndex = Math.floor(dist / 100);
+        while (this.distanceBins.length <= binIndex) {
+            this.distanceBins.push(0);
+        }
+        this.distanceBins[binIndex] += 1;
+    });
     this.renderDistanceBins();
-  }
-
-  private applyDamping(bodies: PhysicsBody[]): void {
-    bodies.forEach(body => {
-      const currentVel = body.body.velocity;
-      const currentAngVel = body.body.angularVelocity;
-      
-      // Dampen linear velocity
-      Body.setVelocity(body.body, {
-        x: currentVel.x * 0.98,
-        y: currentVel.y * 0.98
-      });
-      
-      // Dampen angular velocity
-      Body.setAngularVelocity(body.body, currentAngVel * 0.98);
-      
-      // Limit maximum velocity to prevent crazy speeds
-      const maxSpeed = 2;
-      const speed = Math.sqrt(currentVel.x * currentVel.x + currentVel.y * currentVel.y);
-      if (speed > maxSpeed) {
-        const factor = maxSpeed / speed;
-        Body.setVelocity(body.body, {
-          x: currentVel.x * factor,
-          y: currentVel.y * factor
-        });
-      }
-    });
   }
 
   cleanup(): void {
@@ -326,38 +291,6 @@ export class MainWorld extends BasePhysicsWorld {
       this.hashmarks.push(mark);
       World.add(this.engine.world, mark);
     }
-    // // Only hash the top 3
-    // const colors = ['#e74c3c', '#3498db', '#2ecc40'];
-    // const persistentTop3 = Array.from(this.top3MaxDistances.entries())
-    //   .map(([id, x]) => ({ id, x }))
-    //   .sort((a, b) => b.x - a.x)
-    //   .slice(0, 3);
-    // persistentTop3.forEach((entry, i) => {
-    //   const x = entry.x;
-    //   const mark = Bodies.rectangle(
-    //     x, this.cfg.groundY - 20, 6, 30,
-    //     { isStatic: true, render: { fillStyle: colors[i] }, collisionFilter: { category: 0x0004, mask:0x0000 } }
-    //   );
-    //   this.hashmarks.push(mark);
-    //   World.add(this.engine.world, mark);
-    //   if (this.render && this.render.context && this.render.canvas) {
-    //     const ctx = this.render.context;
-    //     const canvas = this.render.canvas as HTMLCanvasElement;
-    //     const bounds = this.render.bounds;
-    //     const scaleX = canvas.width / (bounds.max.x - bounds.min.x);
-    //     const scaleY = canvas.height / (bounds.max.y - bounds.min.y);
-    //     const screenX = (x - bounds.min.x) * scaleX;
-    //     const worldY = this.cfg.groundY - 28;
-    //     const screenY = (worldY - bounds.min.y) * scaleY;
-    //     ctx.save();
-    //     ctx.font = 'bold 16px sans-serif';
-    //     ctx.fillStyle = colors[i];
-    //     ctx.textAlign = 'center';
-    //     ctx.textBaseline = 'bottom';
-    //     ctx.fillText(x.toFixed(1), screenX, screenY);
-    //     ctx.restore();
-    //   }
-    // });
   }
 
   // Reset the top 3 creatures to the start position instead of removing them

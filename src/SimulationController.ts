@@ -105,7 +105,7 @@ export class SimulationController {
   private evolutionCount = 0;
   private totalCreatures = 0;
   private lifetime = 15_000; // 15 seconds per creature
-  private generationSize = 50;
+  private generationSize = 100;
   private top3HighScores: { id: number; distance: number }[] = [];
   private allCreatures: Map<number, Creature> = new Map();
 
@@ -113,8 +113,8 @@ export class SimulationController {
     this.cfg = cfg;
     this.mainWorld = new MainWorld(cfg, canvas);
     this.generator = new CreatureGenerator(this.mainWorld.getEngine(), cfg);
-    // Trickle-in: add a new creature every 250ms
-    setInterval(() => this.trickleAddCreature(), 250);
+    // Trickle-in: add a new creature every 100ms
+    setInterval(() => this.trickleAddCreature(), 100);
     // Start physics update loop
     this.startMainLoop();
   }
@@ -149,8 +149,8 @@ export class SimulationController {
     this.creatures.push(creature);
     this.mainWorld.addCreature(creature);
     this.totalCreatures++;
-    // Epoch count: increment every 50 creatures added
-    if (this.totalCreatures % 50 === 0) {
+    // Epoch count: increment every this.generationSize creatures added
+    if (this.totalCreatures % this.generationSize === 0) {
       this.evolutionCount++;
       this.totalCreatures = 0;
     }
